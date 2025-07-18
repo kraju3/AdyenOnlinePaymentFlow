@@ -4,10 +4,14 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLoaderData,
 } from "@remix-run/react";
-import type { LinksFunction } from "@remix-run/node";
+import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 
 import "./tailwind.css";
+import { Header } from "./components/Header";
+import { getUser } from "./lib/session.server";
+import { getCartItems } from "./lib/cart.server";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -40,6 +44,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+export async function loader({ request }: LoaderFunctionArgs) {
+  const user = await getUser(request);
+  const cartItems = user ? await getCartItems(user.id) : [];
+  
+  return {
+    user,
+    cartItemCount: cartItems.length,
+  };
+}
+
 export default function App() {
-  return <Outlet />;
+  const { user, cartItemCount } = useLoaderData<typeof loader>();
+  
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Header user={user} cartItemCount={cartItemCount} />
+      <main>
+        <Outlet />
+      </main>
+    </div>
+  );
 }
