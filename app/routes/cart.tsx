@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
       
       // Create return URL for after payment
       //URL encoded
-      const returnUrl = encodeURIComponent(`${new URL(request.url).origin}/checkout/success?orderId=${orderId}`);
+      const returnUrl = encodeURIComponent(`${new URL(request.url).origin}/success?orderId=${orderId}`);
       
       // Create checkout session request from cart data
       const { request: checkoutSessionRequest, requestOptions } = adyenService.createCheckoutSessionFromCart(

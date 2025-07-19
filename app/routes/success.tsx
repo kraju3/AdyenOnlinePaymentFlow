@@ -45,10 +45,13 @@ export default function CheckoutSuccess() {
 
         {/* Success Message */}
         <h1 className="text-3xl font-bold text-gray-900 mb-4">
-          Thank you for your order!
+          {order.status === "SUCCESSFUL" ? "Payment Successful!" : "Order Placed!"}
         </h1>
         <p className="text-lg text-gray-600 mb-8">
-          Your order has been successfully placed and is being processed.
+          {order.status === "SUCCESSFUL" 
+            ? "Your payment has been processed successfully and your order is confirmed."
+            : "Your order has been placed and payment is being processed. You'll receive confirmation once payment is complete."
+          }
         </p>
 
         {/* Order Details */}
@@ -74,7 +77,13 @@ export default function CheckoutSuccess() {
             </div>
             <div>
               <h3 className="text-sm font-medium text-gray-500 mb-2">Status</h3>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                order.status === "SUCCESSFUL" 
+                  ? "bg-green-100 text-green-800"
+                  : order.status === "FAILED"
+                  ? "bg-red-100 text-red-800"
+                  : "bg-yellow-100 text-yellow-800"
+              }`}>
                 {order.status}
               </span>
             </div>

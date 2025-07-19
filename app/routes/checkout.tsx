@@ -1,12 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useFetcher, Link } from "@remix-run/react";
+import { useLoaderData, Link, useNavigate } from "@remix-run/react";
 import { CreditCard, MapPin, ArrowLeft, CheckCircle } from "lucide-react";
 import { requireUserId } from "../lib/session.server";
 import { getCartItems, calculateCartTotal, clearCart } from "../lib/cart.server";
 import { db } from "../lib/db.server";
 import { getAdyenSessionByOrderId } from "../lib/adyen-session.server";
-import AdyenDropIn from "../components/AdyenDropIn";
+import AdyenDropIn, { AdyenSessionData } from "../components/AdyenDropIn";
 import { logger } from "../lib/logger.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -54,17 +55,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return json({ 
     cartItems, 
-    total, 
+    total,
+    orderId,
     adyenSession: {
       sessionData: adyenSession.sessionData,
       sessionId: adyenSession.sessionId,
       amount: adyenSession.amount,
       currency: adyenSession.currency,
       countryCode: adyenSession.countryCode,
-      expiresAt: adyenSession.expiresAt,
       reference: adyenSession.reference,
       returnUrl: adyenSession.returnUrl,
-    }
+      environment: process.env.ADYEN_ENVIRONMENT === "TEST" ? 'test' : "live",
+      clientKey: process.env.ADYEN_CLIENT_PUBLIC_KEY!
+    } as AdyenSessionData
   });
 }
 
@@ -95,15 +98,59 @@ export async function action({ request }: ActionFunctionArgs) {
     // Clear cart
     await clearCart(userId);
 
-    return redirect(`/checkout/success?orderId=${order.id}`);
+    return redirect(`/success?orderId=${order.id}`);
   }
 
   return json({ success: false });
 }
 
 export default function Checkout() {
-  const { cartItems, total, adyenSession } = useLoaderData<typeof loader>();
-  const fetcher = useFetcher();
+  const { cartItems, total, adyenSession, orderId } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
+
+  const handlePaymentCompleted = async (result: any) => {
+    console.log('Payment completed successfully:', result);
+    
+    try {
+      // Create order with pending status
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          orderId,
+          paymentResult: result,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create order');
+      }
+
+      const orderData = await response.json();
+      console.log('Order created:', orderData);
+      
+      // Redirect to success page
+      navigate(`/success?orderId=${orderData.orderId}`);
+    } catch (error) {
+      console.error('Error creating order:', error);
+      alert('Payment completed but there was an issue creating your order. Please contact support.');
+      navigate(`/success?orderId=${orderId}`);
+    }
+  };
+
+  const handlePaymentFailed = (result: any) => {
+    console.log('Payment failed:', result);
+    // You could show a toast notification here
+    alert(`Payment failed: ${result.resultCode || 'Unknown error'}`);
+  };
+
+  const handlePaymentError = (error: any) => {
+    console.error('Payment error:', error);
+    // You could show a toast notification here
+    alert(`Payment error: ${error.message || 'Unknown error'}`);
+  };
 
   // Debug: Log the session data received from the server
   console.log('Checkout component received adyenSession:', {
@@ -224,43 +271,13 @@ export default function Checkout() {
               <h2 className="text-lg font-medium text-gray-900">Payment Information</h2>
             </div>
             
-            {/* Adyen Drop-in Component will be rendered here */}
+            {/* Adyen Drop-in Component */}
             <div className="space-y-4">
-              <div className="p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                <p className="text-sm text-gray-600 text-center">
-                  Adyen Drop-in Component will be integrated here
-                </p>
-                <p className="text-xs text-gray-500 text-center mt-2">
-                  Session ID: {adyenSession.sessionId}
-                </p>
-                <p className="text-xs text-gray-500 text-center">
-                  Amount: {adyenSession.currency} {adyenSession.amount.toFixed(2)}
-                </p>
-                <p className="text-xs text-gray-500 text-center">
-                  Session Data: {adyenSession.sessionData ? `Available (${adyenSession.sessionData.length} chars)` : 'Missing'}
-                </p>
-                {adyenSession.sessionData && (
-                  <p className="text-xs text-gray-400 text-center mt-1 break-all">
-                    Preview: {adyenSession.sessionData.substring(0, 30)}...
-                  </p>
-                )}
-              </div>
-              
-              {/* Adyen Drop-in Component */}
-              <AdyenDropIn
-                sessionData={adyenSession.sessionData}
-                sessionId={adyenSession.sessionId}
-                amount={adyenSession.amount}
-                currency={adyenSession.currency}
-                countryCode={adyenSession.countryCode}
-                onPaymentComplete={(result) => {
-                  console.log('Payment completed:', result);
-                  // Handle successful payment
-                }}
-                onError={(error) => {
-                  console.error('Payment error:', error);
-                  // Handle payment error
-                }}
+              <AdyenDropIn 
+                adyenSessionData={adyenSession}
+                onPaymentCompleted={handlePaymentCompleted}
+                onPaymentFailed={handlePaymentFailed}
+                onError={handlePaymentError}
               />
             </div>
           </div>
@@ -314,23 +331,22 @@ export default function Checkout() {
             </div>
           </div>
 
-          {/* Place Order Button */}
-          <fetcher.Form method="post">
-            <input type="hidden" name="intent" value="place-order" />
-            <button
-              type="submit"
-              disabled={fetcher.state === "submitting"}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-            >
-              <CheckCircle className="w-5 h-5" />
-              <span>
-                {fetcher.state === "submitting" ? "Processing..." : `Place Order - $${finalTotal.toFixed(2)}`}
-              </span>
-            </button>
-          </fetcher.Form>
+          {/* Payment Notice */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <CheckCircle className="h-5 w-5 text-blue-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-blue-800">
+                  Complete your payment using the form above. Your order will be processed once payment is successful.
+                </p>
+              </div>
+            </div>
+          </div>
 
           <p className="text-xs text-gray-500 text-center">
-            By placing your order, you agree to our Terms of Service and Privacy Policy.
+            By completing your payment, you agree to our Terms of Service and Privacy Policy.
           </p>
         </div>
       </div>
