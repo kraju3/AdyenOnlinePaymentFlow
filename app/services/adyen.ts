@@ -4,6 +4,7 @@ import { CreateCheckoutSessionRequest } from "@adyen/api-library/lib/src/typings
 import { CreateCheckoutSessionResponse } from "@adyen/api-library/lib/src/typings/checkout/createCheckoutSessionResponse";
 import type { CartItemWithProduct } from "../lib/cart.server";
 import { logger } from "../lib/logger.server";
+import { db } from "../lib/db.server";
 
 // Singleton pattern with lazy initialization
 class AdyenConnector {
@@ -124,13 +125,18 @@ class AdyenService {
             throw error;
         }
     }
-
-    public createCheckoutSessionFromCart(
-        cartItems: CartItemWithProduct[], 
-        orderId: string,
-        returnUrl: string
-    ): { request: CreateCheckoutSessionRequest; requestOptions: { idempotencyKey: string } } {
-        const total = cartItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+    public async createCheckoutSessionFromCart(
+        cartItems: CartItemWithProduct[],
+        orderId: string, 
+        returnUrl: string,
+        userId: string
+    ): Promise<{ request: CreateCheckoutSessionRequest; requestOptions: { idempotencyKey: string } }> {
+       const user = await db.user.findUnique({
+        where: {
+            id: userId
+        }
+       });
+      const total = cartItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
         
         // Generate a unique idempotency key (max 64 characters for Adyen API)
         const timestamp = Date.now().toString(36);
@@ -154,6 +160,9 @@ class AdyenService {
             returnUrl: returnUrl,
             reference: orderId,
             countryCode: "US",
+          shopperReference: userId,
+          shopperEmail: user?.email,
+            //allowedPaymentMethods: ["card","paypal"],
             // Optional: Add line items for better receipt
             lineItems: cartItems.map(item => ({
                 id: item.product.id,

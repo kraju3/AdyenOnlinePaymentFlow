@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AdyenCheckout, ApplePay, Card, CoreConfiguration, Dropin, GooglePay, PayPal } from '@adyen/adyen-web';
+import { AdyenCheckout, CoreConfiguration, Dropin, Klarna,Card,PayPal, ApplePay, GooglePay } from '@adyen/adyen-web';
 import '@adyen/adyen-web/styles/adyen.css';
+import { logger } from '../lib/logger.client';
 
 interface AdyenDropInProps {
   adyenSessionData: AdyenSessionData;
-  onPaymentCompleted?: (result: any) => void;
+  onPaymentCompleted?: (result: any) => Promise<void>;
   onPaymentFailed?: (result: any) => void;
   onError?: (error: any) => void;
 }
@@ -23,7 +24,7 @@ export interface AdyenSessionData {
 
   const useAdyenGlobalConfig = (
   adyenSessionData: AdyenSessionData,
-  onPaymentCompleted?: (result: any) => void,
+  onPaymentCompleted?: (result: any) => Promise<void>,
   onPaymentFailed?: (result: any) => void,
   onError?: (error: any) => void,
   setErrorMessage?: (message: string | null) => void
@@ -39,21 +40,22 @@ export interface AdyenSessionData {
         value: adyenSessionData.amount,
         currency: adyenSessionData.currency
       },
+      //allowedPaymentMethods: ["card","paypal"],
       countryCode: adyenSessionData.countryCode,
       locale: 'en-US',
       clientKey: adyenSessionData.clientKey,
       onPaymentCompleted: async (result: any, component: any) => {
-        console.info('Payment completed:', result, component);
+        logger.info('Payment completed:', result, component);
         await onPaymentCompleted?.(result);
       },
       onPaymentFailed: (result: any, component: any) => {
-        console.info('Payment failed:', result, component);
+        logger.info('Payment failed:', result, component);
         const errorMsg = result.resultCode || result.message || 'Payment failed';
         setErrorMessage?.(errorMsg);
         onPaymentFailed?.(result);
       },
       onError: (error: any, component?: any) => {
-        console.error('Payment error:', error.name, error.message, error.stack, component);
+        logger.error('Payment error:', error.name, error.message, error.stack, component);
         const errorMsg = error.message || error.name || 'Payment error occurred';
         setErrorMessage?.(errorMsg);
         onError?.(error);
@@ -80,7 +82,7 @@ export default function AdyenDropIn({
     
     const loadAdyenDropIn = async () => {
       try {
-        console.log('Loading Adyen Drop-in with session:', {
+        logger.info('Loading Adyen Drop-in with session:', {
           sessionDataLength: adyenSessionData.sessionData.length,
           sessionId: adyenSessionData.sessionId,
           amount: adyenSessionData.amount,
@@ -111,14 +113,15 @@ export default function AdyenDropIn({
               name: 'Credit or debit card'
             },
           },
-          paymentMethodComponents:[Card,PayPal,GooglePay,ApplePay]
+          instantPaymentTypes:['googlepay','applepay'],
+          paymentMethodComponents:[Card,Klarna,ApplePay,GooglePay]
         });
         
         dropinInstance.mount(containerRef.current);
         dropinRef.current = dropinInstance;
 
       } catch (error) {
-        console.error('Failed to load Adyen Drop-in:', error);
+        logger.error('Failed to load Adyen Drop-in:', error);
         
         // Only show fallback if component is still mounted
         if (isMounted && containerRef.current) {
@@ -150,7 +153,7 @@ export default function AdyenDropIn({
         try {
           dropinInstance.unmount();
         } catch (error) {
-          console.warn('Error unmounting Adyen Drop-in:', error);
+          logger.warn('Error unmounting Adyen Drop-in:', error);
         }
         dropinInstance = null;
       }

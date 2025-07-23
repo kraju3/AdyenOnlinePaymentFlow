@@ -6,7 +6,7 @@ import { logger } from "../lib/logger.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
-    return json({ error: "Method not allowed" }, { status: 405 });
+    return new Response(null ,{ status: 405 });
   }
 
   try {
@@ -52,7 +52,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Always return 200 to acknowledge receipt
-    return json({ received: true });
+    return new Response(null ,{ status: 200 });
 
   } catch (error) {
     logger.error('Error processing Adyen webhook', error instanceof Error ? error : undefined, {
@@ -60,7 +60,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     // Still return 200 to prevent webhook retries
-    return json({ received: true });
+    return new Response(null ,{ status: 200 });
   }
 }
 

@@ -8,11 +8,30 @@ interface LogContext {
   [key: string]: unknown;
 }
 
+// ANSI color codes
+const COLORS = {
+  reset: '\x1b[0m',
+  blue: '\x1b[34m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  gray: '\x1b[90m',
+  bold: '\x1b[1m',
+};
+
+const LEVEL_COLOR: Record<LogLevel, string> = {
+  info: COLORS.blue,
+  warn: COLORS.yellow,
+  error: COLORS.red,
+  debug: COLORS.gray,
+};
+
 class Logger {
   private formatMessage(level: LogLevel, message: string, context?: LogContext): string {
     const timestamp = new Date().toISOString();
     const contextStr = context ? ` | ${JSON.stringify(context)}` : '';
-    return `[${timestamp}] ${level.toUpperCase()}: ${message}${contextStr}`;
+    const color = LEVEL_COLOR[level] || COLORS.reset;
+    const levelStr = `${COLORS.bold}${color}${level.toUpperCase()}${COLORS.reset}`;
+    return `${COLORS.gray}[${timestamp}]${COLORS.reset} ${levelStr}: ${message}${contextStr}`;
   }
 
   debug(message: string, context?: LogContext): void {

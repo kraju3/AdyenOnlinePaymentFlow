@@ -59,10 +59,11 @@ export async function action({ request }: ActionFunctionArgs) {
       const returnUrl = encodeURIComponent(`${new URL(request.url).origin}/success?orderId=${orderId}`);
       
       // Create checkout session request from cart data
-      const { request: checkoutSessionRequest, requestOptions } = adyenService.createCheckoutSessionFromCart(
+      const { request: checkoutSessionRequest, requestOptions } = await adyenService.createCheckoutSessionFromCart(
         cartItems,
         orderId,  
-        returnUrl
+        returnUrl,
+        userId
       );
       
       // Create payment session with Adyen (including idempotency key)
