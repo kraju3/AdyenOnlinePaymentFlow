@@ -114,4 +114,74 @@ export async function cleanupExpiredSessions(): Promise<void> {
       },
     },
   });
-} 
+}
+
+export async function cleanupOldUserSessions(userId: string, keepSessionId?: string): Promise<void> {
+  logger.database('Cleaning up old Adyen sessions for user', { userId, keepSessionId });
+  
+  const deleteCondition: {
+    userId: string;
+    sessionId?: { not: string };
+  } = {
+    userId,
+  };
+  
+  // If we want to keep a specific session, exclude it from deletion
+  if (keepSessionId) {
+    deleteCondition.sessionId = {
+      not: keepSessionId,
+    };
+  }
+  
+  const deletedSessions = await db.adyenSession.deleteMany({
+    where: deleteCondition,
+  });
+  
+  logger.database('Old Adyen sessions cleaned up', { 
+    userId, 
+    deletedCount: deletedSessions.count,
+    keptSessionId: keepSessionId 
+  });
+}
+
+export async function cleanupSessionsForOrder(orderId: string, keepSessionId?: string): Promise<void> {
+  logger.database('Cleaning up Adyen sessions for specific order', { orderId, keepSessionId });
+  
+  // First, find all sessions for this order
+  const existingSessions = await db.adyenSession.findMany({
+    where: { orderId },
+    select: { sessionId: true, userId: true, createdAt: true },
+  });
+  
+  if (existingSessions.length === 0) {
+    logger.database('No existing sessions found for order', { orderId });
+    return;
+  }
+  
+  // Determine which sessions to delete
+  const sessionsToDelete = keepSessionId 
+    ? existingSessions.filter(session => session.sessionId !== keepSessionId)
+    : existingSessions; // Delete all if no specific session to keep
+  
+  if (sessionsToDelete.length === 0) {
+    logger.database('No sessions to delete for order', { orderId, keepSessionId });
+    return;
+  }
+  
+  // Delete the old sessions
+  const deletedSessions = await db.adyenSession.deleteMany({
+    where: {
+      orderId,
+      sessionId: keepSessionId ? {
+        not: keepSessionId,
+      } : undefined,
+    },
+  });
+  
+  logger.database('Adyen sessions cleaned up for order', { 
+    orderId,
+    deletedCount: deletedSessions.count,
+    keptSessionId: keepSessionId,
+    totalSessionsFound: existingSessions.length
+  });
+}

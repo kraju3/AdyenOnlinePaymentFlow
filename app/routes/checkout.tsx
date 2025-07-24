@@ -3,6 +3,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { useLoaderData, Link, useNavigate } from "@remix-run/react";
 import { CreditCard, MapPin, ArrowLeft, CheckCircle } from "lucide-react";
+import { useToast } from "../contexts/ToastContext";
 import { requireUserId } from "../lib/session.server";
 import { getCartItems, calculateCartTotal, clearCart } from "../lib/cart.server";
 import { db } from "../lib/db.server";
@@ -78,13 +79,17 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (intent === "place-order") {
     const cartItems = await getCartItems(userId);
-    const total = calculateCartTotal(cartItems);
+    const subtotal = calculateCartTotal(cartItems);
+    const tax = subtotal * 0.08; // 8% tax rate
+    const total = subtotal + tax;
 
     // Create order
     const order = await db.order.create({
       data: {
         userId,
-        total: total + total * 0.08, // Including tax
+        subtotal,
+        tax,
+        total,
         items: {
           create: cartItems.map(item => ({
             productId: item.productId,
@@ -107,9 +112,16 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function Checkout() {
   const { cartItems, total, adyenSession, orderId } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handlePaymentCompleted = async (result: any) => {
     console.log('Payment completed successfully:', result);
+    
+    toast.success(
+      "Payment Successful!",
+      "Your payment has been processed. Creating your order...",
+      3000
+    );
     
     try {
       // Create order with pending status
@@ -135,21 +147,31 @@ export default function Checkout() {
       navigate(`/success?orderId=${orderData.orderId}`);
     } catch (error) {
       console.error('Error creating order:', error);
-      alert('Payment completed but there was an issue creating your order. Please contact support.');
+      toast.error(
+        "Order Creation Failed",
+        "Payment completed but there was an issue creating your order. Please contact support.",
+        10000
+      );
       navigate(`/success?orderId=${orderId}`);
     }
   };
 
   const handlePaymentFailed = (result: any) => {
     console.log('Payment failed:', result);
-    // You could show a toast notification here
-    alert(`Payment failed: ${result.resultCode || 'Unknown error'}`);
+    toast.error(
+      "Payment Failed",
+      `Your payment could not be processed: ${result.resultCode || 'Unknown error'}`,
+      8000
+    );
   };
 
   const handlePaymentError = (error: any) => {
     console.error('Payment error:', error);
-    // You could show a toast notification here
-    alert(`Payment error: ${error.message || 'Unknown error'}`);
+    toast.error(
+      "Payment Error",
+      `An error occurred during payment: ${error.message || 'Unknown error'}`,
+      8000
+    );
   };
 
   // Debug: Log the session data received from the server
@@ -161,13 +183,15 @@ export default function Checkout() {
     currency: adyenSession.currency
   });
 
-  const tax = total * 0.08;
-  const finalTotal = total + tax;
+  // Backend calculated values - tax is already included in adyenSession.amount
+  const subtotal = total; // This is the cart subtotal
+  const tax = subtotal * 0.08;
+  const finalTotal = adyenSession.amount; // This includes tax from backend
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
         <Link
           to="/cart"
           className="flex items-center text-sm text-gray-500 hover:text-gray-700 transition-colors"
@@ -312,7 +336,7 @@ export default function Checkout() {
             <div className="border-t border-gray-200 pt-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal</span>
-                <span className="text-gray-900">${total.toFixed(2)}</span>
+                <span className="text-gray-900">${subtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Shipping</span>

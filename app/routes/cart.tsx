@@ -5,7 +5,7 @@ import { Trash2, Minus, Plus, ArrowLeft, ShoppingBag } from "lucide-react";
 import { requireUserId } from "../lib/session.server";
 import { getCartItems, updateCartItemQuantity, removeFromCart, calculateCartTotal } from "../lib/cart.server";
 import { adyenService } from "../services/adyen";
-import { storeAdyenSession } from "../lib/adyen-session.server";
+import { storeAdyenSession, cleanupSessionsForOrder } from "../lib/adyen-session.server";
 import { logger } from "../lib/logger.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -73,6 +73,15 @@ export async function action({ request }: ActionFunctionArgs) {
       if (paymentSession.sessionData) {
         logger.cart('Storing Adyen session in database', { userId, orderId, sessionId: paymentSession.id });
         await storeAdyenSession(userId, orderId, paymentSession);
+        
+        // Clean up any old sessions for this order, keeping only the new one
+        try {
+          await cleanupSessionsForOrder(orderId, paymentSession.id);
+          logger.cart('Cleaned up old sessions for order', { userId, orderId, keptSessionId: paymentSession.id });
+        } catch (cleanupError) {
+          // Don't fail the checkout if cleanup fails
+          logger.warn('Failed to cleanup old sessions for order', { userId, orderId, error: cleanupError });
+        }
         
         // Redirect to our checkout page with the order ID
         logger.cart('Redirecting to checkout page', { userId, orderId });

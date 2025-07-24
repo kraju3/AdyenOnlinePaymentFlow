@@ -47,6 +47,18 @@ export function Header({ cartItemCount = 0, user }: HeaderProps) {
             >
               Products
             </Link>
+            {user && (
+              <Link
+                to="/orders"
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive("/orders")
+                    ? "text-blue-600 bg-blue-50"
+                    : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+                }`}
+              >
+                Orders
+              </Link>
+            )}
           </nav>
 
           {/* Desktop Actions */}
@@ -123,6 +135,19 @@ export function Header({ cartItemCount = 0, user }: HeaderProps) {
               >
                 Products
               </Link>
+              {user && (
+                <Link
+                  to="/orders"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActive("/orders")
+                      ? "text-blue-600 bg-blue-50"
+                      : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+                  }`}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Orders
+                </Link>
+              )}
               <Link
                 to="/cart"
                 className="flex items-center justify-between px-3 py-2 text-sm text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"

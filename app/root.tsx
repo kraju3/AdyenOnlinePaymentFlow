@@ -12,6 +12,8 @@ import "./tailwind.css";
 import { Header } from "./components/Header";
 import { getUser } from "./lib/session.server";
 import { getCartItems } from "./lib/cart.server";
+import { ToastProvider } from "./contexts/ToastContext";
+import { GlobalToastManager } from "./components/GlobalToastManager";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -58,11 +60,14 @@ export default function App() {
   const { user, cartItemCount } = useLoaderData<typeof loader>();
   
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header user={user} cartItemCount={cartItemCount} />
-      <main>
-        <Outlet />
-      </main>
-    </div>
+    <ToastProvider>
+      <div className="min-h-screen bg-gray-50">
+        <Header user={user} cartItemCount={cartItemCount} />
+        <main>
+          <Outlet />
+        </main>
+      </div>
+      <GlobalToastManager />
+    </ToastProvider>
   );
 }

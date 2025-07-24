@@ -136,7 +136,9 @@ class AdyenService {
             id: userId
         }
        });
-      const total = cartItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+      const subtotal = cartItems.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+      const tax = subtotal * 0.08; // 8% tax rate
+      const total = subtotal + tax;
         
         // Generate a unique idempotency key (max 64 characters for Adyen API)
         const timestamp = Date.now().toString(36);
@@ -146,6 +148,8 @@ class AdyenService {
         
         logger.payment('Creating checkout session from cart', {
             orderId,
+            subtotal,
+            tax,
             total,
             itemCount: cartItems.length,
             idempotencyKey
@@ -154,14 +158,17 @@ class AdyenService {
         const request: CreateCheckoutSessionRequest = {
             merchantAccount: process.env.ADYEN_MERCHANT_ACCOUNT!,
             amount: {
-                value: Math.round(total * 100), // Convert to minor units (cents)
+                value: Math.round(total * 100), // Convert to minor units (cents) - includes tax
                 currency: "USD"
             },
             returnUrl: returnUrl,
             reference: orderId,
             countryCode: "US",
-          shopperReference: userId,
+            shopperReference: userId,
           shopperEmail: user?.email,
+          storePaymentMethod: true,
+          recurringProcessingModel: CreateCheckoutSessionRequest.RecurringProcessingModelEnum.CardOnFile,
+            shopperInteraction: CreateCheckoutSessionRequest.ShopperInteractionEnum.Ecommerce,
             //allowedPaymentMethods: ["card","paypal"],
             // Optional: Add line items for better receipt
             lineItems: cartItems.map(item => ({

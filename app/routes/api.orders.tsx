@@ -5,6 +5,7 @@ import { requireUserId } from "../lib/session.server";
 import { getCartItems, calculateCartTotal, clearCart } from "../lib/cart.server";
 import { db } from "../lib/db.server";
 import { logger } from "../lib/logger.server";
+import { cleanupSessionsForOrder } from "../lib/adyen-session.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -24,7 +25,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Get cart items
     const cartItems = await getCartItems(userId);
-    const total = calculateCartTotal(cartItems);
+    const subtotal = calculateCartTotal(cartItems);
+    const tax = subtotal * 0.08; // 8% tax rate
+    const total = subtotal + tax;
 
     if (cartItems.length === 0) {
       logger.info('No cart items found for order creation', { userId, orderId });
@@ -37,7 +40,9 @@ export async function action({ request }: ActionFunctionArgs) {
         id: orderId, // Use the provided orderId
         userId,
         status: "PENDING", // Will be updated to SUCCESSFUL via webhook
-        total: total + total * 0.08, // Including tax
+        subtotal,
+        tax,
+        total,
         items: {
           create: cartItems.map(item => ({
             productId: item.productId,
@@ -57,6 +62,15 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Clear the cart after successful order creation
     await clearCart(userId);
+
+    // Clean up all Adyen sessions for this specific order after successful creation
+    try {
+      await cleanupSessionsForOrder(orderId);
+      logger.info('Adyen sessions cleaned up after order creation', { userId, orderId: order.id });
+    } catch (cleanupError) {
+      // Don't fail the order if cleanup fails
+      logger.warn('Failed to cleanup Adyen sessions for order', { userId, orderId: order.id, error: cleanupError });
+    }
 
     logger.info('Order created successfully', { 
       userId, 

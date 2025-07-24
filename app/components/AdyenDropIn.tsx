@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AdyenCheckout, CoreConfiguration, Dropin, Klarna,Card,PayPal, ApplePay, GooglePay } from '@adyen/adyen-web';
+import { AdyenCheckout, CoreConfiguration, Dropin, Klarna,Card, ApplePay, GooglePay } from '@adyen/adyen-web';
 import '@adyen/adyen-web/styles/adyen.css';
 import { logger } from '../lib/logger.client';
 
