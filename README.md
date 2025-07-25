@@ -1,4 +1,4 @@
-# ShopDrop - Modern Checkout Experience
+# ShopRun - Modern Checkout Experience
 
 A modern e-commerce checkout experience built with Remix, featuring a complete shopping flow from product browsing to order confirmation.
 

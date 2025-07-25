@@ -1,22 +1,31 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { useLoaderData, Link, useNavigate } from "@remix-run/react";
 import { CreditCard, MapPin, ArrowLeft, CheckCircle } from "lucide-react";
 import { useToast } from "../contexts/ToastContext";
+import { useEffect, useRef, useState } from "react";
 import { requireUserId } from "../lib/session.server";
-import { getCartItems, calculateCartTotal, clearCart } from "../lib/cart.server";
-import { db } from "../lib/db.server";
+import { getCartItems, calculateCartTotal } from "../lib/cart.server";
 import { getAdyenSessionByOrderId } from "../lib/adyen-session.server";
 import AdyenDropIn, { AdyenSessionData } from "../components/AdyenDropIn";
 import { logger } from "../lib/logger.server";
+import { AdyenCheckout } from '@adyen/adyen-web';
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const userId = await requireUserId(request);
   const url = new URL(request.url);
   const orderId = url.searchParams.get("orderId");
+  const sessionId = url.searchParams.get("sessionId");
+  const redirectResult = url.searchParams.get("redirectResult");
 
-  logger.cart('Checkout page loaded', { userId, orderId: orderId || undefined });
+  logger.cart('Checkout page loaded', { 
+    userId, 
+    orderId: orderId || undefined,
+    hasSessionId: !!sessionId,
+    hasRedirectResult: !!redirectResult,
+    isRedirect: !!(sessionId && redirectResult)
+  });
 
   if (!orderId) {
     logger.cart('No order ID provided, redirecting to cart', { userId });
@@ -68,51 +77,90 @@ export async function loader({ request }: LoaderFunctionArgs) {
       returnUrl: adyenSession.returnUrl,
       environment: process.env.ADYEN_ENVIRONMENT === "TEST" ? 'test' : "live",
       clientKey: process.env.ADYEN_CLIENT_PUBLIC_KEY!
-    } as AdyenSessionData
+    } as AdyenSessionData,
+    // Redirect handling data
+    redirectData: sessionId && redirectResult ? {
+      sessionId,
+      redirectResult
+    } : null
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
-  const userId = await requireUserId(request);
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-
-  if (intent === "place-order") {
-    const cartItems = await getCartItems(userId);
-    const subtotal = calculateCartTotal(cartItems);
-    const tax = subtotal * 0.08; // 8% tax rate
-    const total = subtotal + tax;
-
-    // Create order
-    const order = await db.order.create({
-      data: {
-        userId,
-        subtotal,
-        tax,
-        total,
-        items: {
-          create: cartItems.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.product.price,
-          })),
-        },
-      },
-    });
-
-    // Clear cart
-    await clearCart(userId);
-
-    return redirect(`/success?orderId=${order.id}`);
-  }
-
-  return json({ success: false });
-}
-
 export default function Checkout() {
-  const { cartItems, total, adyenSession, orderId } = useLoaderData<typeof loader>();
+  const { cartItems, total, adyenSession, orderId, redirectData } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [isHandlingRedirect, setIsHandlingRedirect] = useState(false);
+  const redirectHandledRef = useRef(false);
+
+  // Handle redirect result from payment methods like iDEAL, 3D Secure
+  useEffect(() => {
+    if (redirectData && !redirectHandledRef.current && !isHandlingRedirect) {
+      redirectHandledRef.current = true;
+      setIsHandlingRedirect(true);
+      
+      const handleRedirectResult = async () => {
+        try {
+          console.log('Handling redirect result:', {
+            sessionId: redirectData.sessionId,
+            hasRedirectResult: !!redirectData.redirectResult
+          });
+
+          // Create AdyenCheckout instance with sessionId from redirect
+          const checkoutConfig = {
+            session: {
+              id: redirectData.sessionId,
+              sessionData: adyenSession.sessionData
+            },
+            environment: adyenSession.environment as "test" | "live",
+            clientKey: adyenSession.clientKey,
+            onPaymentCompleted: async (result: any) => {
+              console.log('Redirect payment completed:', result);
+              await handlePaymentCompleted(result);
+            },
+            onPaymentFailed: (result: any) => {
+              console.log('Redirect payment failed:', result);
+              toast.error(
+                "Payment Failed",
+                result.resultCode || result.message || "Payment could not be processed",
+                5000
+              );
+              setIsHandlingRedirect(false);
+            },
+            onError: (error: any) => {
+              console.error('Redirect payment error:', error);
+              toast.error(
+                "Payment Error", 
+                error.message || "An error occurred while processing your payment",
+                5000
+              );
+              setIsHandlingRedirect(false);
+            }
+          };
+
+          const checkout = await AdyenCheckout(checkoutConfig);
+          
+          // Submit the redirect result
+          await checkout.submitDetails({
+            details: {
+              redirectResult: redirectData.redirectResult
+            }
+          });
+
+        } catch (error) {
+          console.error('Error handling redirect result:', error);
+          toast.error(
+            "Payment Error",
+            "Failed to process payment redirect. Please try again.",
+            5000
+          );
+          setIsHandlingRedirect(false);
+        }
+      };
+
+      handleRedirectResult();
+    }
+  }, [redirectData, adyenSession, isHandlingRedirect, toast]);
 
   const handlePaymentCompleted = async (result: any) => {
     console.log('Payment completed successfully:', result);
@@ -187,6 +235,29 @@ export default function Checkout() {
   const subtotal = total; // This is the cart subtotal
   const tax = subtotal * 0.08;
   const finalTotal = adyenSession.amount; // This includes tax from backend
+
+  // Show redirect processing state
+  if (isHandlingRedirect) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center">
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-100 mb-6">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Processing Payment</h1>
+          <p className="text-lg text-gray-600 mb-8">
+            We&apos;re confirming your payment details. Please wait a moment...
+          </p>
+          <div className="bg-blue-50 rounded-lg p-6 max-w-md mx-auto">
+            <p className="text-sm text-blue-800">
+              <strong>Please do not close this page or navigate away.</strong><br />
+              Your payment is being processed and you&apos;ll be redirected automatically.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

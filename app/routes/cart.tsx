@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
       
       // Create return URL for after payment
       //URL encoded
-      const returnUrl = encodeURIComponent(`${new URL(request.url).origin}/success?orderId=${orderId}`);
+      const returnUrl = `${new URL(request.url).origin}/checkout?orderId=${orderId}`;
       
       // Create checkout session request from cart data
       const { request: checkoutSessionRequest, requestOptions } = await adyenService.createCheckoutSessionFromCart(
@@ -283,7 +283,7 @@ export default function Cart() {
             )}
 
             <p className="mt-4 text-xs text-gray-500 text-center">
-              Secure checkout powered by ShopDrop
+              Secure checkout powered by ShopRun
             </p>
           </div>
         </div>

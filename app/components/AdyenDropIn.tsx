@@ -46,16 +46,19 @@ export interface AdyenSessionData {
       clientKey: adyenSessionData.clientKey,
       onPaymentCompleted: async (result: any, component: any) => {
         logger.info('Payment completed:', result, component);
+        // TODO: Handle payment completion
         await onPaymentCompleted?.(result);
       },
       onPaymentFailed: (result: any, component: any) => {
         logger.info('Payment failed:', result, component);
+        // TODO: Handle payment failure
         const errorMsg = result.resultCode || result.message || 'Payment failed';
         setErrorMessage?.(errorMsg);
         onPaymentFailed?.(result);
       },
       onError: (error: any, component?: any) => {
         logger.error('Payment error:', error.name, error.message, error.stack, component);
+        // TODO: Handle payment error
         const errorMsg = error.message || error.name || 'Payment error occurred';
         setErrorMessage?.(errorMsg);
         onError?.(error);

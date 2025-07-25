@@ -90,4 +90,30 @@ export async function verifyLogin(email: string, password: string) {
   }
 
   return { id: user.id, email: user.email, name: user.name };
+}
+
+export async function createUser(email: string, password: string, name: string) {
+  // Check if user already exists
+  const existingUser = await db.user.findUnique({
+    where: { email },
+  });
+
+  if (existingUser) {
+    return null; // User already exists
+  }
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Create user
+  const user = await db.user.create({
+    data: {
+      email,
+      password: hashedPassword,
+      name,
+    },
+    select: { id: true, email: true, name: true },
+  });
+
+  return user;
 } 

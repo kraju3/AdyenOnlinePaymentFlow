@@ -12,7 +12,7 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   }
   
   return [
-    { title: `${data.product.name} - ShopDrop` },
+    { title: `${data.product.name} - ShopRun` },
     { name: "description", content: data.product.description },
   ];
 };

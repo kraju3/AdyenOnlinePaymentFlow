@@ -9,7 +9,7 @@ import { addToCart } from "../lib/cart.server";
 
 export const meta: MetaFunction = () => {
   return [
-    { title: "ShopDrop - Modern Shopping Experience" },
+    { title: "ShopRun - Modern Shopping Experience" },
     { name: "description", content: "Discover amazing products with our modern shopping experience" },
   ];
 };
@@ -60,7 +60,7 @@ export default function Index() {
       {/* Hero Section */}
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          Welcome to ShopDrop
+          Welcome to ShopRun
         </h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto">
           Discover amazing products with our modern shopping experience. 

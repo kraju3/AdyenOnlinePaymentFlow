@@ -1,9 +1,11 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, Link } from "@remix-run/react";
-import { Package, Calendar, CreditCard, Eye, ShoppingBag } from "lucide-react";
+import { useLoaderData, Link, useSubmit } from "@remix-run/react";
+import { Package, Calendar, CreditCard, Eye, ShoppingBag, RotateCcw } from "lucide-react";
 import { requireUserId } from "../lib/session.server";
 import { db } from "../lib/db.server";
+import { logger } from "../lib/logger.server";
+import { adyenService } from "../services/adyen";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const userId = await requireUserId(request);
@@ -16,6 +18,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           product: true,
         },
       },
+      payment: true, // Include OrderPayment data
     },
     orderBy: { createdAt: "desc" },
   });
@@ -23,8 +26,85 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return json({ orders });
 }
 
+export async function action({ request }: ActionFunctionArgs) {
+  const userId = await requireUserId(request);
+  const formData = await request.formData();
+  const orderId = formData.get("orderId") as string;
+
+  if (!orderId) {
+    return json({ error: "Order ID is required" }, { status: 400 });
+  }
+
+  try {
+    // 1. Get the Order and OrderPayment object
+    const order = await db.order.findFirst({
+      where: { 
+        id: orderId,
+        userId, // Ensure user owns this order
+      },
+      include: {
+        payment: true,
+      },
+    });
+
+    if (!order) {
+      return json({ error: "Order not found" }, { status: 404 });
+    }
+
+    if (!order.payment) {
+      return json({ error: "Payment information not found" }, { status: 404 });
+    }
+
+    if (order.status !== "SUCCESSFUL") {
+      return json({ error: "Only successful orders can be refunded" }, { status: 400 });
+    }
+    // 2. Call Adyen refund service (stub for now)
+   await adyenService.refundPayment(order.payment);
+
+    // 3. Update Order Status to "REFUND IN PROGRESS"
+    await db.order.update({
+      where: { id: orderId },
+      data: { 
+        status: "REFUND IN PROGRESS",
+        updatedAt: new Date()
+      }
+    });
+
+    logger.info('Refund initiated successfully', {
+      orderId,
+      userId,
+      pspReference: order.payment.pspReference,
+      amount: order.payment.amount
+    });
+
+    return json({ 
+      success: true, 
+      message: "Refund initiated successfully",
+      orderPayment: order.payment 
+    });
+
+  } catch (error) {
+    logger.error('Error initiating refund', error instanceof Error ? error : undefined, {
+      orderId,
+      userId
+    });
+
+    return json({ error: "Failed to initiate refund" }, { status: 500 });
+  }
+}
+
+
 export default function Orders() {
   const { orders } = useLoaderData<typeof loader>();
+  const submit = useSubmit();
+
+  const handleRefund = (orderId: string) => {
+    if (confirm("Are you sure you want to initiate a refund for this order?")) {
+      const formData = new FormData();
+      formData.set("orderId", orderId);
+      submit(formData, { method: "post" });
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -34,6 +114,12 @@ export default function Orders() {
         return "bg-yellow-100 text-yellow-800";
       case "FAILED":
         return "bg-red-100 text-red-800";
+      case "REFUND IN PROGRESS":
+        return "bg-orange-100 text-orange-800";
+      case "REFUNDED":
+        return "bg-purple-100 text-purple-800";
+      case "CANCELLED":
+        return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -47,6 +133,12 @@ export default function Orders() {
         return "⏳";
       case "FAILED":
         return "✗";
+      case "REFUND IN PROGRESS":
+        return "🔄";
+      case "REFUNDED":
+        return "↩️";
+      case "CANCELLED":
+        return "❌";
       default:
         return "?";
     }
@@ -169,8 +261,8 @@ export default function Orders() {
                 </span>
               </div>
               
-              {/* View Details Button */}
-              <div className="mt-4">
+              {/* Action Buttons */}
+              <div className="mt-4 space-y-2">
                 <Link
                   to={`/success?orderId=${order.id}`}
                   className="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors"
@@ -178,6 +270,17 @@ export default function Orders() {
                   <Eye className="w-4 h-4 mr-2" />
                   View Details
                 </Link>
+                
+                {/* Refund Button - Only show for successful orders */}
+                {order.status === "SUCCESSFUL" && (
+                  <button
+                    onClick={() => handleRefund(order.id)}
+                    className="w-full inline-flex justify-center items-center px-4 py-2 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Request Refund
+                  </button>
+                )}
               </div>
             </div>
           </div>

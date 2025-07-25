@@ -60,6 +60,13 @@ export async function action({ request }: ActionFunctionArgs) {
       success: notification.success
     });
 
+    // Create OrderPayment record for this webhook event
+    await createOrderPayment(notification);
+
+    if(notification.eventCode === "CANCEL_OR_REFUND" && notification.success === "true") {
+      await handleCancelOrRefund(notification);
+    }
+
     // Handle payment completion
     if (notification.eventCode === "AUTHORISATION" && notification.success === "true") {
       await handlePaymentSuccess(notification);
@@ -177,6 +184,175 @@ async function handlePaymentFailure(notificationItem: any) {
     logger.error('Error updating order status to FAILED', error instanceof Error ? error : undefined, {
       merchantReference,
       pspReference
+    });
+  }
+}
+
+async function handleCancelOrRefund(notificationItem: any) {
+  const { 
+    originalReference, 
+    pspReference, 
+    amount, 
+    additionalData,
+    eventCode,
+    success 
+  } = notificationItem;
+
+  try {
+    // Find the original OrderPayment using the originalReference (original payment's pspReference)
+    const originalPayment = await db.orderPayment.findUnique({
+      where: { pspReference: pspReference },
+      include: { order: true }
+    });
+
+    if (!originalPayment) {
+      logger.warn('Original payment not found for refund/cancel', { 
+        originalReference, 
+        refundPspReference: pspReference 
+      });
+      return;
+    }
+
+    const orderId = originalPayment.orderId;
+    const action = additionalData?.['modification.action'] || 'refund';
+
+    // Only update order status if the refund/cancel was successful
+    if (success === "true") {
+      const newStatus = action === 'refund' ? 'REFUNDED' : 'CANCELLED';
+      
+      await db.order.update({
+        where: { id: orderId },
+        data: { 
+          status: newStatus,
+          updatedAt: new Date()
+        }
+      });
+
+      logger.info(`Order status updated to ${newStatus}`, {
+        orderId,
+        action,
+        amount: amount?.value ? amount.value / 100 : 0,
+        currency: amount?.currency
+      });
+    } else {
+      logger.warn(`Refund/cancel failed - order status not updated`, {
+        orderId,
+        originalReference,
+        refundPspReference: pspReference,
+        action
+      });
+    }
+
+    // Update the OrderPayment record to reflect the refund/cancel
+    await db.orderPayment.update({
+      where: { orderId },
+      data: {
+        eventCode, // Update to CANCEL_OR_REFUND
+        success: success === "true",
+        reason: `${action}: ${amount?.value ? amount.value / 100 : 0} ${amount?.currency || 'USD'}`,
+        rawWebhookData: JSON.stringify(notificationItem),
+        updatedAt: new Date()
+      }
+    });
+
+    logger.info(`Order ${action} webhook processed`, {
+      orderId,
+      originalReference,
+      refundPspReference: pspReference,
+      action,
+      amount: amount?.value ? amount.value / 100 : 0,
+      currency: amount?.currency,
+      success: success === "true"
+    });
+
+  } catch (error) {
+    logger.error('Error processing refund/cancel', error instanceof Error ? error : undefined, {
+      originalReference,
+      refundPspReference: pspReference
+    });
+  }
+}
+
+async function createOrderPayment(notificationItem: any) {
+  const {
+    merchantReference,
+    merchantAccountCode,
+    paymentMethod,
+    pspReference,
+    reason,
+    success,
+    eventCode,
+    amount,
+    eventDate,
+    additionalData
+  } = notificationItem;
+
+  try {
+    // Check if OrderPayment already exists for this order (upsert behavior)
+    const existingPayment = await db.orderPayment.findUnique({
+      where: { orderId: merchantReference }
+    });
+
+    if (existingPayment) {
+      // Update existing payment record
+      await db.orderPayment.update({
+        where: { orderId: merchantReference },
+        data: {
+          merchantAccountCode,
+          merchantReference,
+          checkoutSessionId: additionalData?.checkoutSessionId || null,
+          paymentMethod,
+          pspReference,
+          reason: reason || null,
+          success: success === "true",
+          eventCode,
+          amount: amount?.value ? amount.value / 100 : 0, // Convert cents to dollars
+          currency: amount?.currency || "USD",
+          eventDate: new Date(eventDate),
+          rawWebhookData: JSON.stringify(notificationItem),
+          updatedAt: new Date()
+        }
+      });
+
+      logger.info('OrderPayment updated', {
+        orderId: merchantReference,
+        pspReference,
+        eventCode,
+        success: success === "true"
+      });
+    } else {
+      // Create new payment record
+      await db.orderPayment.create({
+        data: {
+          orderId: merchantReference,
+          merchantAccountCode,
+          merchantReference,
+          checkoutSessionId: additionalData?.checkoutSessionId || null,
+          paymentMethod,
+          pspReference,
+          reason: reason || null,
+          success: success === "true",
+          eventCode,
+          amount: amount?.value ? amount.value / 100 : 0, // Convert cents to dollars
+          currency: amount?.currency || "USD",
+          eventDate: new Date(eventDate),
+          rawWebhookData: JSON.stringify(notificationItem)
+        }
+      });
+
+      logger.info('OrderPayment created', {
+        orderId: merchantReference,
+        pspReference,
+        eventCode,
+        success: success === "true"
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error creating/updating OrderPayment', error instanceof Error ? error : undefined, {
+      merchantReference,
+      pspReference,
+      eventCode
     });
   }
 } 

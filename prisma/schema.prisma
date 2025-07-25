@@ -47,6 +47,7 @@ model Order {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   items     OrderItem[]
+  payment   OrderPayment?
 }
 
 model OrderItem {
@@ -87,6 +88,29 @@ model AdyenSession {
   returnUrl   String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model OrderPayment {
+  id                   String   @id @default(cuid())
+  orderId              String   @unique // One-to-one relationship with Order
+  order                Order    @relation(fields: [orderId], references: [id])
+  merchantAccountCode  String   // From webhook: merchantAccountCode
+  merchantReference    String   // From webhook: merchantReference (should match orderId)
+  checkoutSessionId    String?  // From webhook: additionalData.checkoutSessionId
+  paymentMethod        String   // From webhook: paymentMethod
+  pspReference         String   @unique // From webhook: pspReference (Adyen's unique payment reference)
+  reason               String?  // From webhook: reason
+  success              Boolean  // From webhook: success (converted from string "true"/"false")
+  eventCode            String   // From webhook: eventCode (e.g., "AUTHORISATION")
+  amount               Float    // From webhook: amount.value (convert from cents)
+  currency             String   // From webhook: amount.currency
+  eventDate            DateTime // From webhook: eventDate
+  rawWebhookData       String   // Full webhook JSON for debugging
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([pspReference])
+  @@index([merchantReference])
 }
 
  
